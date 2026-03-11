@@ -1,0 +1,756 @@
+---
+title: Amazon Product Co-Purchasing Network Analysis
+author: Megan Millet
+format:
+  html: 
+    theme: darkly
+    code-fold: true
+    fig-align: center
+    embed-resources: true
+execute:
+  eval: true
+  cache: true
+jupyter: python3
+---
+
+```{=html}
+<style>
+.quarto-title,
+.quarto-title h1.title {
+    text-align: center;
+}
+
+.quarto-title h1.title {
+    white-space: nowrap;
+    font-size: clamp(1.25rem, 2.1vw, 2.35rem);
+}
+
+main#quarto-document-content section.level2,
+main#quarto-document-content section.level3 {
+    opacity: 0.08;
+    transform: translateY(24px);
+    filter: blur(1px);
+    transition: opacity 500ms ease, transform 500ms ease, filter 500ms ease;
+}
+
+main#quarto-document-content section.level2.is-visible,
+main#quarto-document-content section.level3.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+}
+
+main#quarto-document-content .cell-output-display p {
+    text-align: center;
+}
+
+main#quarto-document-content .cell-output-display img.figure-img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Extra bottom room so users can reach the true page end across browsers */
+main#quarto-document-content {
+    padding-bottom: 8rem;
+}
+
+main#quarto-document-content::after {
+    content: "";
+    display: block;
+    height: 6rem;
+}
+
+#back-to-top {
+    position: fixed;
+    left: 50%;
+    bottom: 1.1rem;
+    transform: translateX(-50%) translateY(8px);
+    z-index: 9999;
+    border: none;
+    border-radius: 0;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 220ms ease, transform 220ms ease, visibility 220ms ease, color 180ms ease;
+}
+
+#back-to-top.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+#back-to-top:hover {
+    color: #ffffff;
+    text-decoration: underline;
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const backToTopBtn = document.createElement("button");
+    backToTopBtn.id = "back-to-top";
+    backToTopBtn.type = "button";
+    backToTopBtn.textContent = "↑ Back to top";
+    backToTopBtn.setAttribute("aria-label", "Back to top");
+    document.body.appendChild(backToTopBtn);
+
+    backToTopBtn.addEventListener("click", function () {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    const toggleBackToTop = () => {
+        const doc = document.documentElement;
+        const nearBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 80;
+        if (nearBottom) {
+            backToTopBtn.classList.add("is-visible");
+        } else {
+            backToTopBtn.classList.remove("is-visible");
+        }
+    };
+
+    window.addEventListener("scroll", toggleBackToTop, { passive: true });
+    toggleBackToTop();
+
+    const sections = Array.from(
+        document.querySelectorAll(
+            "main#quarto-document-content section.level2, main#quarto-document-content section.level3"
+        )
+    );
+
+    if (sections.length) {
+        sections[0].classList.add("is-visible");
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add("is-visible");
+                        observer.unobserve(entry.target);
+                    }
+                });
+            },
+            {
+                threshold: 0,
+                rootMargin: "0px 0px -35% 0px"
+            }
+        );
+
+        sections.slice(1).forEach((section) => observer.observe(section));
+    }
+});
+</script>
+```
+
+## Background & Motivation
+
+### Dataset
+This project analyzes the [**Amazon Product Co-Purchasing Network**](https://snap.stanford.edu/data/amazon-meta.html), a dataset collected from the Amazon website in summer 2006. 
+It contains product metadata and review information for 548,552 products spanning four categories: Books, Music CDs, Videos, and DVDs.
+
+| Product Group | Count   |
+|---------------|---------|
+| Books         | 393,561 |
+| Music CDs     | 103,144 |
+| Videos        | 26,132  |
+| DVDs          | 19,828  |
+| **Total**     | **548,552** |
+
+Each product entry contains the following fields:
+
+- **Title** — name of the product
+- **Salesrank** — Amazon sales ranking at time of collection
+- **Similar products** — ASINs of co-purchased products (i.e. customers who bought X also bought Y)
+- **Categories** — hierarchical product categorization
+- **Reviews** — timestamped entries including customer ID, rating, votes, and helpfulness score
+
+### Network Construction
+The co-purchasing relationships form a natural graph structure, where each product is a node 
+and an edge between two products indicates they were frequently bought together. The full 
+network contains 548,552 nodes and 1,788,725 edges. Due to computational constraints, we 
+work with a random sample of 5,000 edges drawn with a fixed seed (`seed=2026`) for reproducibility.
+
+### Motivation
+When people shop on Amazon, they often buy related products together. The goal of this analysis is to identify which products appear at the center of these co-purchasing patterns, and whether they are simply popular items or unexpected bridges between different groups of buyers.
+
+*Citation: J. Leskovec, L. Adamic and B. Adamic. The Dynamics of Viral Marketing. 
+ACM Transactions on the Web (ACM TWEB), 1(1), 2007.*
+
+## I. Network Initialization and Random Sampling
+### Imports
+
+```{python}
+import networkx as nx
+import matplotlib.pyplot as plt
+import random
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.stats import pearsonr
+```
+
+### Randomly sample 5000 edges from full network
+
+```{python}
+# construct the helper function with fixed seed input
+def sample_random_edges(file_path, target_edges, seed):
+    random.seed(seed)
+
+    G = nx.Graph()
+    current_asin = None
+    current_title = None
+    edge_count = 0
+    p = 0.01
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not (line.startswith("ASIN:") or "title:" in line 
+                    or "group:" in line or "similar:" in line):
+                continue
+
+            line = line.strip()
+
+            # parse the relevant data: ASIN, title, group, and similar
+            if line.startswith("ASIN:"):
+                current_asin = line[5:].strip()
+                current_title = None
+
+            elif line.startswith("title:") and current_asin:
+                current_title = line[6:].strip()
+                G.add_node(current_asin, title=current_title)
+
+            elif line.startswith("group:") and current_asin:
+                G.add_node(current_asin, group=line[6:].strip())
+
+            elif line.startswith("similar:") and current_asin:
+                parts = line.split()
+                for s in parts[2:]:
+                    if random.random() < p:
+                        G.add_edge(current_asin, s)
+                        edge_count += 1
+                        if edge_count >= target_edges:
+                            print(f"Collected {edge_count} edges.")
+                            return G
+
+    return G
+
+# construct the graph via random sampling
+#| cache: true
+FILE_PATH = "amazon-meta.txt" # stanford SNAP dataset
+
+G_sample = sample_random_edges(
+    FILE_PATH,
+    target_edges=5000, # 5000 edges for a manageable sample size
+    seed=2026 # fixed seed
+)
+```
+
+### Why is random sampling important? Why use this approach specifically?
+The full network contains 1,788,725 edges, making it computationally impossible 
+to analyze it in its entirety on a personal laptop. We use a **Bernoulli sampling** technique 
+to gather edges, by accepting each edge into the graph with probability $p = 0.01$. This parses the file 
+without loading it into memory, and with a fixed seed (=`2026`), we have fully reproducible results. 
+
+The main tradeoff with this method is sparsity: gathering only 5,000 edges means many structural relationships are lost, which will be reflected later in the analysis as we observe all-zero similarity scores. 
+
+## II. Network Visualization
+### Visualize the sampled graph
+```{python}
+plt.figure(figsize=(4, 4))
+pos = nx.random_layout(G_sample, seed=2026)  
+nx.draw(G_sample, pos, node_size=10, with_labels=False, edge_color="gray", alpha=0.5)
+plt.title("Amazon Product Co-Purchasing Network (Sampled)")
+plt.show()
+
+print("Nodes: ", len(G_sample.nodes()))
+print("Edges: ", len(G_sample.edges()))
+```
+
+Since the entire graph contains too many nodes and edges, it is very difficult to visualize any structure. 
+
+### Visualize the largest connected component
+```{python}
+# compute largest connected component and make it a subgraph
+largest_cc = max(nx.connected_components(G_sample), key=len)
+subgraph = G_sample.subgraph(largest_cc)
+pos_sub = nx.spring_layout(subgraph, seed=2026, k=0.5)  # renamed from pos
+
+# visualize the largest connected component
+plt.figure(figsize=(4, 4))
+nx.draw(subgraph, pos_sub, node_size=5, with_labels=False,
+        edge_color="gray", node_color="steelblue", alpha=0.5)
+
+# highlight and label only Iliad ASIN 9626340622 in the largest connected component
+iliad_asin = "9626340622"
+iliad_nodes = [n for n in subgraph.nodes() if n == iliad_asin]
+
+if iliad_nodes:
+    nx.draw_networkx_nodes(
+        subgraph,
+        pos_sub,
+        nodelist=iliad_nodes,
+        node_color="gold",
+        edgecolors="black",
+        linewidths=0.8,
+        node_size=90,
+    )
+    ax = plt.gca()
+    x, y = pos_sub[iliad_asin]
+    ax.annotate(
+        "Iliad (9626340622)",
+        xy=(x, y),
+        xytext=(0, 12),
+        textcoords="offset points",
+        ha="center",
+        va="bottom",
+        fontsize=7,
+        color="white",
+        bbox=dict(facecolor="black", alpha=0.55, edgecolor="none", pad=1.0),
+        clip_on=False,
+    )
+
+plt.title("Largest Connected Component in Amazon Co-Purchasing Network")
+plt.show()
+
+print("Nodes in largest component:", len(subgraph.nodes()))
+
+# identify top 5 most connected nodes in the largest connected component
+lcc_degree = nx.degree_centrality(subgraph)
+top5_lcc = sorted(lcc_degree.items(), key=lambda x: x[1], reverse=True)[:5]
+
+# print the actual nodes in it
+print("Top 5 Nodes in Largest Connected Component by Degree Centrality:")
+for asin, score in top5_lcc:
+    print(f"  ASIN: {asin} | Score: {score:.6f} | Title: {G_sample.nodes[asin].get('title', 'N/A')} | Group: {G_sample.nodes[asin].get('group', 'N/A')}")
+```
+
+All nodes in the largest connected component:
+
+1. *The Iliad (Classic Literature with Classical Music)*, by Homer, 2004 (Book)
+2. *Selections from the Canzoniere and Other Works*, by Petrarch, 1999 (Book)
+3. *The Odyssey (Signet Classics)*, by Homer, 1999 (Book)
+4. *The Iliad*, by Homer, 1999 (Book)
+5. *Medieval People*, by Eileen Power, 2000 (Book)
+
+These products can still be accessed through Amazon's website using the following URL schema: `https://www.amazon.com/dp/{asin}` where `{asin}` is the ASIN of the product. For example, the first product can be found at `https://www.amazon.com/dp/9626340622`.
+
+There are only five nodes in the largest component, as the sampled network is incredibly sparse. As we will see later, *The Iliad (Classic Literature with Classical Music)* book will appear as one of the most central nodes in terms of eigenvector centrality and Katz centrality.
+
+## III. Centrality Analysis
+### Degree centrality and identify top 5 products
+```{python}
+# compute degree centrality
+degree_centrality = nx.degree_centrality(G_sample)
+
+# get the top 5 products by degree centrality
+top5_degree = sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True)[:5]
+top5_nodes = [asin for asin, _ in top5_degree]
+
+# split nodes into two groups for visualization
+top5_set = set(top5_nodes)
+other_nodes = [n for n in G_sample.nodes() if n not in top5_set]
+
+plt.figure(figsize=(4, 4))
+
+# draw gray nodes first (background)
+nx.draw_networkx_nodes(G_sample, pos, nodelist=other_nodes,
+                       node_color="lightgray", node_size=2, alpha=0.4)
+
+# draw edges
+nx.draw_networkx_edges(G_sample, pos, edge_color="lightgray", alpha=0.3)
+
+# draw top 5 on top (foreground)
+nx.draw_networkx_nodes(G_sample, pos, nodelist=top5_nodes,
+                       node_color="red", node_size=200, alpha=1.0)
+
+# add labels for the top 5 degree-centrality nodes
+deg_labels = {}
+for rank, (asin, _) in enumerate(top5_degree, start=1):
+    title = G_sample.nodes[asin].get("title", "N/A")
+    short_title = title if len(title) <= 20 else title[:17] + "..."
+    deg_labels[asin] = f"#{rank} {short_title}"
+
+deg_label_pos = {n: (pos[n][0], pos[n][1] + 0.035) for n in deg_labels}
+
+nx.draw_networkx_labels(
+    G_sample,
+    deg_label_pos,
+    labels=deg_labels,
+    font_size=5,
+    font_color="white",
+    verticalalignment="bottom",
+    bbox=dict(facecolor="black", alpha=0.45, edgecolor="none", pad=1.0),
+)
+
+plt.title("Degree Centrality: Top 5 Highlighted")
+plt.axis("off")
+plt.show()
+
+# print top 5 products with their degree centrality, title, and group
+print("Top 5 Products by Degree Centrality:")
+for asin, centrality in top5_degree:
+    print(f"  ASIN: {asin} | Score: {centrality:.8f} | Title: {G_sample.nodes[asin].get('title', 'N/A')} | Group: {G_sample.nodes[asin].get('group', 'N/A')}")
+```
+
+### Why are these the top products? 
+The top five products are as follows: 
+
+1. *The Hidden Messages in Water*, by Masaru Emoto, 2004 (Book)
+2. *Medical-Surgical Nursing*: Assessment and Management of Clinical Problems, by Sharon M. Lewis, 6th edition, 2003 (Book)
+3. *Cost Accounting: A Managerial Emphasis, 11th Edition (Student Guide and Review Manual)*, by Harris, Datar, Foster, 11th edition, 2002 (Book)
+4. *One Thousand White Women : The Journals Of May Dodd*, by Jim Fergus, 1998 (Book)
+5. *Doomed Planet (Mission Earth, Vol 10)*, by L.Ron Hubbard, 1987 (Book)
+
+Each product page is available at `https://www.amazon.com/dp/{asin}`.
+
+All of the top 5 products are books from a variety of genres. The top products by degree centrality are likely to be popular books that were frequently co-purchased with other books, especially textbooks and bestsellers. Furthermore, 393,561 out of 548,552 products are books in the network, so the top 5 products all being books makes probabilistic sense. 
+
+### Eigenvector centrality and identify top 5 products
+```{python}
+# compute eigenvector centrality
+eigenvector_centrality = nx.eigenvector_centrality(G_sample, max_iter=1000)
+
+# get the top 5 products by eigenvector centrality
+top5_eigen = sorted(eigenvector_centrality.items(), key=lambda x: x[1], reverse=True)[:5]
+top5_nodes = [asin for asin, _ in top5_eigen]
+
+# split nodes into two groups for visualization
+top5_set = set(top5_nodes)
+other_nodes = [n for n in G_sample.nodes() if n not in top5_set]
+
+plt.figure(figsize=(4, 4))
+
+# draw gray nodes first (background)
+nx.draw_networkx_nodes(G_sample, pos, nodelist=other_nodes,
+                       node_color="lightgray", node_size=2, alpha=0.4)
+
+# draw edges
+nx.draw_networkx_edges(G_sample, pos, edge_color="lightgray", alpha=0.3)
+
+# draw top 5 on top (foreground)
+nx.draw_networkx_nodes(G_sample, pos, nodelist=top5_nodes,
+                       node_color="blue", node_size=200, alpha=1.0)
+
+# add labels for the top 5 eigenvector-centrality nodes
+eigen_labels = {}
+for rank, (asin, _) in enumerate(top5_eigen, start=1):
+    title = G_sample.nodes[asin].get("title", "N/A")
+    short_title = title if len(title) <= 20 else title[:17] + "..."
+    eigen_labels[asin] = f"#{rank} {short_title}"
+
+eigen_label_pos = {n: (pos[n][0], pos[n][1] + 0.035) for n in eigen_labels}
+
+nx.draw_networkx_labels(
+    G_sample,
+    eigen_label_pos,
+    labels=eigen_labels,
+    font_size=5,
+    font_color="white",
+    verticalalignment="bottom",
+    bbox=dict(facecolor="black", alpha=0.45, edgecolor="none", pad=1.0),
+)
+
+plt.title("Eigenvector Centrality: Top 5 Highlighted")
+plt.axis("off")
+plt.show()
+
+# print top 5 products with their eigenvector centrality, title, and group
+print("Top 5 Products by Eigenvector Centrality:")
+for asin, centrality in top5_eigen:
+    print(f"  ASIN: {asin} | Score: {centrality:.4f} | Title: {G_sample.nodes[asin].get('title', 'N/A')} | Group: {G_sample.nodes[asin].get('group', 'N/A')}")
+``` 
+
+### Why does the top fifth product for eigenvector centrality differ from the top fifth product for degree centrality?
+
+*Doomed Planet (Mission Earth, Vol 10)* ranks 5th by degree centrality because it 
+has slightly more direct co-purchasing connections than *The Iliad*. However, eigenvector centrality weighs connections by the importance of the neighbors. 
+
+*The Iliad* has fewer direct connections than *Doomed Planet*, but the products 
+it is co-purchased with are themselves more highly connected. This makes *The Iliad* 
+more influential under eigenvector centrality, even though it loses out to 
+*Doomed Planet* on raw connection count. In other words, *The Iliad* is connected 
+to better-connected neighbors, which eigenvector centrality rewards and degree centrality does not.
+
+### PageRank and Katz centrality and identify top 5 products
+
+```{python}
+# compute pagerank
+pagerank = nx.pagerank(G_sample)
+top5_pagerank = sorted(pagerank.items(), key=lambda x: x[1], reverse=True)[:5]
+top5_pr_nodes = [asin for asin, _ in top5_pagerank]
+
+other_nodes = [n for n in G_sample.nodes() if n not in set(top5_pr_nodes)]
+
+# plot the pagerank on a graph with top 5 highlighted
+plt.figure(figsize=(4, 4))
+nx.draw_networkx_nodes(G_sample, pos, nodelist=other_nodes,
+                       node_color="lightgray", node_size=2, alpha=0.4)
+nx.draw_networkx_edges(G_sample, pos, edge_color="lightgray", alpha=0.3)
+nx.draw_networkx_nodes(G_sample, pos, nodelist=top5_pr_nodes,
+                       node_color="orange", node_size=200, alpha=1.0)
+
+# add labels for the top 5 PageRank nodes
+pr_labels = {}
+for rank, (asin, _) in enumerate(top5_pagerank, start=1):
+    title = G_sample.nodes[asin].get("title", "N/A")
+    short_title = title if len(title) <= 20 else title[:17] + "..."
+    pr_labels[asin] = f"#{rank} {short_title}"
+
+pr_label_pos = {n: (pos[n][0], pos[n][1] + 0.035) for n in pr_labels}
+
+nx.draw_networkx_labels(
+    G_sample,
+    pr_label_pos,
+    labels=pr_labels,
+    font_size=5,
+    font_color="white",
+    verticalalignment="bottom",
+    bbox=dict(facecolor="black", alpha=0.45, edgecolor="none", pad=1.0),
+)
+
+plt.title("PageRank Top 5 Highlighted")
+plt.axis("off")
+plt.show()
+
+# print the top 5 products by pagerank with their scores, titles, and groups
+print("Top 5 Products by PageRank:")
+for asin, score in top5_pagerank:
+    print(f"  ASIN: {asin} | Score: {score:.8f} | Title: {G_sample.nodes[asin].get('title', 'N/A')} | Group: {G_sample.nodes[asin].get('group', 'N/A')}")
+
+# compute katz centrality
+katz = nx.katz_centrality(G_sample)
+top5_katz = sorted(katz.items(), key=lambda x: x[1], reverse=True)[:5]
+top5_katz_nodes = [asin for asin, _ in top5_katz]
+
+other_nodes = [n for n in G_sample.nodes() if n not in set(top5_katz_nodes)]
+
+# plot the katz centrality on a graph with top 5 highlighted
+plt.figure(figsize=(4, 4))
+nx.draw_networkx_nodes(G_sample, pos, nodelist=other_nodes,
+                       node_color="lightgray", node_size=2, alpha=0.4)
+nx.draw_networkx_edges(G_sample, pos, edge_color="lightgray", alpha=0.3)
+nx.draw_networkx_nodes(G_sample, pos, nodelist=top5_katz_nodes,
+                       node_color="green", node_size=200, alpha=1.0)
+
+# add labels for the top 5 Katz-centrality nodes
+katz_labels = {}
+for rank, (asin, _) in enumerate(top5_katz, start=1):
+    title = G_sample.nodes[asin].get("title", "N/A")
+    short_title = title if len(title) <= 20 else title[:17] + "..."
+    katz_labels[asin] = f"#{rank} {short_title}"
+
+katz_label_pos = {n: (pos[n][0], pos[n][1] + 0.035) for n in katz_labels}
+
+nx.draw_networkx_labels(
+    G_sample,
+    katz_label_pos,
+    labels=katz_labels,
+    font_size=5,
+    font_color="white",
+    verticalalignment="bottom",
+    bbox=dict(facecolor="black", alpha=0.45, edgecolor="none", pad=1.0),
+)
+
+plt.title("Katz Centrality Top 5 Highlighted")
+plt.axis("off")
+plt.show()
+
+# print the top 5 products by katz centrality with their scores, titles, and groups
+print("Top 5 Products by Katz Centrality:")
+for asin, score in top5_katz:
+    print(f"  ASIN: {asin} | Score: {score:.8f} | Title: {G_sample.nodes[asin].get('title', 'N/A')} | Group: {G_sample.nodes[asin].get('group', 'N/A')}")
+```
+
+### Why are PageRank results aligned with the Degree Centrality results, and Katz results follow Eigenvector Centrality results?
+
+This behavior is expected; it is because of how each measure is mathematically defined.
+
+PageRank and degree centrality both primarily reward nodes with many direct 
+connections. PageRank adds a damping factor which simulates a random walk, but in a sparse network like ours, the damping effect is minimal and the ranking collapses toward degree centrality. This is why the top 4 products are identical across both measures, with only the 5th differing slightly in score.
+
+Katz centrality and eigenvector centrality both reward nodes that are connected to other well-connected nodes, counting not just immediate neighbors but paths of all lengths. Longer paths will contribute exponentially less to the score. This means both measures place *The Iliad* as the 5th product instead of *Doomed Planet*.
+
+Degree centrality and PageRank centrality answer "how many connections does this node have?", 
+while eigenvector centrality and Katz centrality answer "how well-connected are this node's neighbors?"
+
+### Shortest Paths Between Top 5 Nodes
+To further analyze the structural relationship between the top 5 degree 
+centrality nodes, we can compute the shortest path length between each pair. A short path suggests the products are closely related in the co-purchasing network, while an infinite path (i.e. no path exists) confirms that they are completely disconnected.
+
+```{python}
+# compute shortest paths between top 5 degree centrality nodes
+print("Shortest Path Lengths Between Top 5 Degree Centrality Nodes:")
+for i, (asin_i, _) in enumerate(top5_degree):
+    for j, (asin_j, _) in enumerate(top5_degree):
+        if j > i:
+            try:
+                path_length = nx.shortest_path_length(G_sample, asin_i, asin_j)
+                print(f"  #{i+1} vs #{j+1}: {path_length} hops")
+            except nx.NetworkXNoPath:
+                print(f"  #{i+1} vs #{j+1}: No path exists")
+```
+
+As no paths exist between the top 5 degree centrality nodes, we can conclude that they are completely disconnected from each other within the network.
+
+## IV. Similarity Analysis
+
+### Cosine similarity for the top 5 degree centrality nodes
+```{python}
+# build adjacency vectors for top 5 degree nodes
+all_nodes = list(G_sample.nodes())
+node_index = {n: i for i, n in enumerate(all_nodes)}
+
+# helper function to get the adjacency vector for a given node
+def get_adjacency_vector(node):
+    vec = np.zeros(len(all_nodes))
+    for neighbor in G_sample.neighbors(node):
+        vec[node_index[neighbor]] = 1
+    return vec
+
+# collect top 5 
+top5_vecs = np.array([get_adjacency_vector(n) for n in top5_nodes])
+cos_sim = cosine_similarity(top5_vecs)
+
+# display as a heatmap for visualization
+fig, ax = plt.subplots(figsize=(4, 4))
+im = ax.imshow(cos_sim, cmap="Blues", vmin=0, vmax=1)
+ax.set_xticks(range(5))
+ax.set_yticks(range(5))
+ax.set_xticklabels([f"#{i+1}" for i in range(5)], rotation=45)
+ax.set_yticklabels([f"#{i+1}" for i in range(5)])
+plt.colorbar(im, ax=ax, label="Cosine Similarity")
+plt.title("Cosine Similarity")
+plt.tight_layout()
+plt.show()
+
+# print the Cosine similarity matrix
+print("Cosine Similarity Matrix for Top 5 Degree Centrality Nodes:")
+for i, (asin_i, _) in enumerate(top5_degree):
+    for j, (asin_j, _) in enumerate(top5_degree):
+        if j > i:
+            print(f"  #{i+1} vs #{j+1}: {cos_sim[i][j]:.4f}")
+```
+
+### Jaccard similarity for top 5 degree nodes
+
+```{python}
+# compute jaccard similarity between top 5 degree nodes
+jaccard_matrix = np.zeros((5, 5))
+for i, (asin_i, _) in enumerate(top5_degree):
+    for j, (asin_j, _) in enumerate(top5_degree):
+        if i != j:
+            pairs = [(asin_i, asin_j)]
+            result = list(nx.jaccard_coefficient(G_sample, pairs))
+            jaccard_matrix[i][j] = result[0][2]  # (u, v, score)
+        else:
+            jaccard_matrix[i][j] = 1.0  # diagonal is self-similarity
+
+# visualize the Jaccard similarity matrix as a heatmap
+fig, ax = plt.subplots(figsize=(4, 4))
+im = ax.imshow(jaccard_matrix, cmap="Greens", vmin=0, vmax=1)
+ax.set_xticks(range(5))
+ax.set_yticks(range(5))
+ax.set_xticklabels([f"#{i+1}" for i in range(5)], rotation=45)
+ax.set_yticklabels([f"#{i+1}" for i in range(5)])
+plt.colorbar(im, ax=ax, label="Jaccard Similarity")
+plt.title("Jaccard Similarity")
+plt.tight_layout()
+plt.show()
+
+# print the results
+print("Jaccard Similarity Matrix for Top 5 Degree Centrality Nodes:")
+for i, (asin_i, _) in enumerate(top5_degree):
+    for j, (asin_j, _) in enumerate(top5_degree):
+        if j > i:
+            print(f"  #{i+1} vs #{j+1}: {jaccard_matrix[i][j]:.4f}")
+```
+
+### Pearson's Correlation Coefficient for the top 5 degree nodes
+
+```{python}
+# compute pearson correlation between adjacency vectors of top 5 degree nodes
+pearson_matrix = np.zeros((5, 5))
+for i, (asin_i, _) in enumerate(top5_degree):
+    for j, (asin_j, _) in enumerate(top5_degree):
+        vec_i = get_adjacency_vector(asin_i)
+        vec_j = get_adjacency_vector(asin_j)
+        if np.std(vec_i) == 0 or np.std(vec_j) == 0:
+            pearson_matrix[i][j] = 0.0
+        else:
+            pearson_matrix[i][j], _ = pearsonr(vec_i, vec_j)
+
+# visualize as a heatmap 
+fig, ax = plt.subplots(figsize=(4, 4))
+im = ax.imshow(pearson_matrix, cmap="Purples", vmin=-1, vmax=1)
+ax.set_xticks(range(5))
+ax.set_yticks(range(5))
+ax.set_xticklabels([f"#{i+1}" for i in range(5)], rotation=45)
+ax.set_yticklabels([f"#{i+1}" for i in range(5)])
+plt.colorbar(im, ax=ax, label="Pearson Correlation")
+plt.title("Pearson Correlation")
+plt.tight_layout()
+plt.show()
+
+# print the results
+print("Pearson Correlation Matrix for Top 5 Degree Centrality Nodes:")
+for i, (asin_i, _) in enumerate(top5_degree):
+    for j, (asin_j, _) in enumerate(top5_degree):
+        if j > i:
+            print(f"  #{i+1} vs #{j+1}: {pearson_matrix[i][j]:.4f}")
+```
+
+### Interpreting the similarity results for top 5 degree centrality nodes
+
+All three similarity measures (Cosine, Jaccard, and Pearson) return scores of 0 across every pair of top 5 nodes. This is consistent across all three measures because they all fundamentally ask the same question: "do these nodes share any neighbors?"
+
+Cosine measures the angle between adjacency vectors, Jaccard measures the ratio of shared to total neighbors, and Pearson measures the linear correlation between adjacency vectors; but, if no neighbors are shared, all three scores equal 0.
+
+This result is best explained by the sparsity of our sample. With only 5,000 edges sampled from 1,788,725, the probability of any two nodes sharing a neighbor is extremely low. Rather than indicating that these products are unrelated, it simply reflects the limits of what a 0.28% sample can reveal about shared structure. On the full network, we would expect non-zero similarity scores between at least some of the top products.
+
+## V. Conclusions and Further Considerations
+
+### Summary
+Across all four centrality measures, the top products are consistently books, 
+reflecting the dominance of books in the dataset (393,561 out of 548,552 products). 
+Degree centrality and PageRank converge on the same ranking, as do eigenvector 
+centrality and Katz, suggesting two distinct notions of influence in this network: 
+*local connectivity* and *neighborhood quality*.
+
+Also, a notable finding is the recurrence of *The Iliad (Classic 
+Literature with Classical Music)*. It appears as the 5th most central node under 
+both eigenvector and Katz centrality, and is also the most central node within the 
+largest connected component of the sampled network. This suggests that while 
+*The Iliad* does not have the most direct co-purchasing connections, it sits at the 
+heart of a well-connected cluster of classical works, thus making it a 
+meaningful connector in the network despite its small degree score. 
+
+### Limitations
+The most significant limitation of this analysis is the sampling technique implemented. 
+Sampling 5,000 edges from 1,788,725 retains only 0.28% of the full network, 
+which is why similarity measures between top nodes are all 0; the sample is 
+way too sparse to capture shared neighborhoods. A denser sample or the full network 
+would likely reveal more interesting structures.
+
+Additionally, the two ASINs returning `N/A` for title and group were added to the graph 
+solely as co-purchasing targets of other products. Their own product entries 
+were either not reached before sampling terminated, or were never selected 
+as edge sources during the random sampling process, hence why their titles were 
+only stored as `N/A`. Luckily, we could still recover their names by using the ASIN
+number and inputting that into the Amazon URL.
+
+### Future Work
+- **Temporal analysis**: The dataset was collected in 2006. It would be 
+  interesting to compare this network structure against a modern Amazon 
+  co-purchasing network to see how product influence has shifted over time.
+
+- **Category/group analysis**: Aggregating centrality scores by product group 
+  (Book, DVD, Music, Video) could help to identify which product groups tend to 
+  occupy more central positions in the co-purchasing network.
+
+- **Product reviews**: Incorporating review data (ratings, helpfulness) could allow us to analyze whether more central products also tend to have higher ratings or more reviews, which could indicate a relationship between influence and customer satisfaction.
