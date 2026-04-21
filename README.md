@@ -18,7 +18,7 @@ A collection of data science, engineering, and research projects by **Megan Mill
 
 ## 🛒 Amazon Co-Product Purchasing Network Analysis
 
-🌐 **[View Live Presentation](https://megmillet.github.io/Projects/Amazon%20Co-Product%20Purchasing%20Network%20Analysis/application_presentation.html)**
+🌐 **[View Live Presentation](https://megmillet.github.io/Projects/)**
 
 **Tools:** Python · NetworkX · Matplotlib · Quarto
 
