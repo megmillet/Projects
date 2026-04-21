@@ -22,7 +22,7 @@ A collection of data science, engineering, and research projects by **Megan Mill
 
 An exploration of Amazon's co-purchasing behavior using graph theory. The dataset, sourced from the [Stanford SNAP collection](https://snap.stanford.edu/data/amazon-meta.html), covers 548,552 products and nearly 1.8 million co-purchasing edges collected in 2006.
 
-Due to computational constraints, the analysis works on a reproducible random sample of 5,000 edges (seed = 2026) using Bernoulli sampling — parsing the full file without loading it into memory.
+Due to computational constraints, the analysis works on a reproducible random sample of 5,000 edges (seed = 2026) using Bernoulli sampling; parsing the full file without loading it into memory.
 
 **Key analyses:**
 - Network construction and visualization of the largest connected component
@@ -31,7 +31,7 @@ Due to computational constraints, the analysis works on a reproducible random sa
 - **PageRank** — ranks products by global influence in the network
 - **Katz Centrality** — measures influence through all paths, discounting longer ones
 
-**Highlight:** PageRank results aligned closely with degree centrality, while Katz centrality tracked eigenvector centrality — a behavior explained by the mathematical definitions of each measure.
+**Highlight:** PageRank results aligned closely with degree centrality, while Katz centrality tracked eigenvector centrality, which is a behavior explained by the mathematical definitions of each measure.
 
 ---
 
@@ -52,7 +52,7 @@ A statistical investigation into whether larger discounts on Amazon India produc
 
 **Deliverables:** Research paper · Presentation slides
 
-A deep dive into the mathematical foundations of Google's PageRank algorithm — the algorithm that originally powered Google Search. Covers the linear algebra and graph theory underpinning the ranking model, including the random surfer model and power iteration convergence.
+A deep dive into the mathematical foundations of Google's PageRank algorithm: the algorithm that originally powered Google Search. Covers the linear algebra and graph theory underpinning the ranking model, including the random surfer model and power iteration convergence.
 
 ---
 
