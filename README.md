@@ -18,6 +18,8 @@ A collection of data science, engineering, and research projects by **Megan Mill
 
 ## 🛒 Amazon Co-Product Purchasing Network Analysis
 
+🌐 **[View Live Presentation](https://megmillet.github.io/Projects/Amazon%20Co-Product%20Purchasing%20Network%20Analysis/application_presentation.html)**
+
 **Tools:** Python · NetworkX · Matplotlib · Quarto
 
 An exploration of Amazon's co-purchasing behavior using graph theory. The dataset, sourced from the [Stanford SNAP collection](https://snap.stanford.edu/data/amazon-meta.html), covers 548,552 products and nearly 1.8 million co-purchasing edges collected in 2006.
