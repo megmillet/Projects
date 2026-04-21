@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'Amazon Co-Product Purchasing Network Analysis/application_presentation.html'
+      - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
 permissions:
