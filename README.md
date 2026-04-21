@@ -8,15 +8,17 @@ A collection of data science, engineering, and research projects by **Megan Mill
 
 | Project | Topics | Type |
 |---|---|---|
-| [Amazon Co-Product Purchasing Network Analysis](#-amazon-co-product-purchasing-network-analysis) | Graph Theory, Network Science, Python | Data Science |
-| [Amazon India Discount Analysis](#-amazon-india-discount-analysis) | Statistics, Regression, Hypothesis Testing, Python | Data Science |
-| [The Google PageRank Score](#-the-google-pagerank-score) | Graph Algorithms, Linear Algebra | Research Paper |
-| [Aerobear — Vertical Flight Society](#️-aerobear--vertical-flight-society) | Aerospace Engineering, VTOL Design | Engineering |
-| [Batches — BioCase Competition](#-batches--biocase-competition) | Biology, Computational Methods | Competition |
+| [Amazon Co-Product Purchasing Network Analysis](./Amazon%20Co-Product%20Purchasing%20Network%20Analysis) | Graph Theory, Network Science, Python | Data Science |
+| [Amazon India Discount Analysis](./Amazon%20India%20Discount%20Analysis) | Statistics, Regression, Hypothesis Testing, Python | Data Science |
+| [The Google PageRank Score](./The%20Google%20PageRank%20Score) | Graph Algorithms, Linear Algebra | Research Paper |
+| [Aerobear — Vertical Flight Society](./Aerobear%20%E2%80%94%20Vertical%20Flight%20Society) | Aerospace Engineering, VTOL Design | Engineering |
+| [Batches — BioCase Competition](./Batches%20%E2%80%94%20BioCase%20Competition) | Biology, Computational Methods | Competition |
 
 ---
 
 ## 🛒 Amazon Co-Product Purchasing Network Analysis
+
+🌐 **[View Live Presentation](https://megmillet.github.io/Projects/Amazon%20Co-Product%20Purchasing%20Network%20Analysis/application_presentation.html)**
 
 **Tools:** Python · NetworkX · Matplotlib · Quarto
 
